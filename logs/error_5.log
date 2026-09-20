@@ -1,0 +1,8 @@
+ERROR:root: Currently reading [19005 <-> 19999] [19.09.2026 at 19:21:45]
+Traceback (most recent call last):
+  File "C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\ai_server.py", line 230, in <module>
+    frozen_state, action = agent.action(new_state)
+                           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\ai_core.py", line 478, in action
+    self.calling_socket.sendall((json.dumps({"ping": 1}) + "\n").encode())
+ConnectionResetError: [WinError 10054] Удаленный хост принудительно разорвал существующее подключение

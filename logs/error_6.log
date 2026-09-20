@@ -1,0 +1,6 @@
+ERROR:root: Currently reading [20006 <-> 57715] [19.09.2026 at 18:57:39]
+Traceback (most recent call last):
+  File "C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\ai_server.py", line 182, in <module>
+    chunks = buffer[client_conn].split("\n")[:-1]
+             ~~~~~~^^^^^^^^^^^^^
+KeyError: <socket.socket fd=1780, family=2, type=1, proto=0, laddr=('127.0.0.1', 20006), raddr=('127.0.0.1', 57715)>
