@@ -8,9 +8,9 @@ The programm takes the 'sims' list to decide:
 2. What modes will agents operate
 
 ### Modes
-0 - head AI agent. Only 1 of this type can be present in any configuration.
-1 - Random agent (weighted). Epsilon=1, but first 4 sims have custom weights for moves (Check ai_core.py).
-2 - AI-powered agent. Epsilon will destribute from 0.05 to 0.81 between all agents in this mode. For example, config [2, 2, 2, 2] will result in agents having epsilons 0.05, 0.3, 0.56, 0.81.
+0. head AI agent. Only 1 of this type can be present in any configuration.
+1. Random agent (weighted). Epsilon=1, but first 4 sims have custom weights for moves (Check ai_core.py).
+2. AI-powered agent. Epsilon will destribute from 0.05 to 0.81 between all agents in this mode. For example, config [2, 2, 2, 2] will result in agents having epsilons 0.05, 0.3, 0.56, 0.81.
 
 ## AI core
 This script contains main Agent class.
