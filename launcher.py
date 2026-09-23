@@ -19,11 +19,16 @@ def full_exit(exc_type, exc_value, exc_traceback):
         try:
             s.sendall((json.dumps({"terminate": 1}) + "\n").encode())
             print(f"[L] sent termination {socket_ports(s)}")
+        except ConnectionResetError:
+            print(f"[L] cannot send termination {socket_ports(s)}")
+    time.sleep(0.5)
+    for s in s_sockets:
+        try:
             s.close()
         except ConnectionResetError:
-            print(f"[L] socket unavailable {socket_ports(s)}")
+            print(f"[L] socket already closed {socket_ports(s)}")
 
-    time.sleep(3)
+    time.sleep(2)
 
     for id in all_processes.keys():
         sp = all_processes[id][0]
@@ -32,15 +37,13 @@ def full_exit(exc_type, exc_value, exc_traceback):
                 print("[L] closed godot")
                 sp.terminate()
 
-    #time.sleep(2)
-    #print(f"[L] statuses: {[p.poll() for p, c, s in all_processes]}")
     sys.exit()
 
 def socket_ports(s:socket.socket):
     return f"[{s.getsockname()[1]} <-> {s.getpeername()[1]}]"
 
 #----------------
-sims = [0,2,2,2,2] # 0 - Head, learner; 1 - random (epsilon=1, little tweaks to the chances); 2 - smart agent, uses AI to decide + epsilon
+sims = [0,2,2,1,1] # 0 - Head, learner; 1 - random (epsilon=1, little tweaks to the chances); 2 - smart agent, uses AI to decide + epsilon
 no_sim_for = []   # use for Godot-env tests (type indexes of the sim(s) in sims array)
 debug_sims = False  # launch godot console with the sims (kinda useless, cus they close almost immediately after encountering errors)
 selfplay = 0  # 1 = let yourself control the game (only one sim)

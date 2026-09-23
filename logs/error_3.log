@@ -1,0 +1,5 @@
+ERROR:root: Currently reading [20003 <-> 52506] [23.09.2026 at 21:55:06]
+Traceback (most recent call last):
+  File "C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\ai_server.py", line 183, in <module>
+    raise ConnectionResetError("Client disconnected!")
+ConnectionResetError: Client disconnected!

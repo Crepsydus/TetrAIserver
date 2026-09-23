@@ -85,7 +85,7 @@ if __name__ == "__main__":
     created_sockets.append(launcher_socket)
     launcher_socket.setblocking(False)
     if st:
-        st.roll("0", c.F.color(84) + f"launcher connected: {socket_ports(client_conn, True)}" + c.F.reset())
+        st.roll("0", c.F.color(84) + f"launcher connected: {socket_ports(launcher_socket, True)}" + c.F.reset())
         st.press()
     buffer[launcher_socket] = ""
 
@@ -110,13 +110,13 @@ if __name__ == "__main__":
 
             if st:
                 st.roll("0", c.F.color(84) + f"agent connected: {socket_ports(a_conn, False)}" + c.F.reset())
-                st.press()
 
             a_conn.setblocking(False)
             agents_info[a_conn] = [i, 0, -1]
             buffer[a_conn] = ""
             if st:
                 st.edit("30", 2+i, c.F.color(84) + str(addr[1]))
+                st.press()
 
     receiver_socket.close()
 
@@ -149,22 +149,24 @@ if __name__ == "__main__":
             except BlockingIOError:
                 continue
             except ConnectionResetError:
-                buffer.pop(conn)
-                created_sockets.remove(conn)
                 if config[srv_idx == 0]:
                     if conn in agents_info.keys():
+                        created_sockets.remove(conn)
                         idx = agents_info[conn][0]
                         agents_info.pop(conn)
                         label = c.F.color(196) + c.S.style(1) + c.S.style(5) + "DEAD"
                         if st:
                             st.edit("32", 2 + idx, label + c.F.reset())
                             st.press()
+                buffer.pop(conn)
                 break
             if data:
                 buffer[conn] += data.decode()
 
 
-        # processing launcher-socket data
+        # processing launcher data
+        if launcher_socket not in buffer.keys():
+            raise ConnectionResetError("Launcher disconnected!")
         chunks = buffer[launcher_socket].split("\n")[:-1]
         buffer[launcher_socket] = buffer[launcher_socket].split("\n")[-1]
         for chunk in chunks:
@@ -173,12 +175,12 @@ if __name__ == "__main__":
                 if st:
                     st.roll("0", c.F.color(88) + f"[{port}] terminating...")
                     st.press()
-                else:
-                    print(c.F.color(88) + f"[{port}] terminating...")
-                socket_exit()
+                raise Exception("Got terminated from launcher")
 
 
         # processing client data (moves)
+        if client_conn not in buffer.keys():
+            raise ConnectionResetError("Client disconnected!")
         chunks = buffer[client_conn].split("\n")[:-1]
         buffer[client_conn] = buffer[client_conn].split("\n")[-1]
 
