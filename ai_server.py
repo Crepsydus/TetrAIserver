@@ -94,10 +94,10 @@ if __name__ == "__main__":
     if config[srv_idx] == 0:
         if len(config) > 1:
             if st:
-                st.add_rect("3",46,8,92, 11 + backlog - 1, True, c.F.color(57))
-                st.add_rect("30", 47, 9, 61, 10 + backlog - 1, False)
-                st.add_rect("31", 62, 9, 76, 10 + backlog - 1, False)
-                st.add_rect("32", 77, 9, 91, 10 + backlog - 1, False)
+                st.add_rect("3",58,8,92, 11 + backlog - 1, True, c.F.color(57))
+                st.add_rect("30", 59, 9, 69, 10 + backlog - 1, False)
+                st.add_rect("31", 70, 9, 80, 10 + backlog - 1, False)
+                st.add_rect("32", 81, 9, 91, 10 + backlog - 1, False)
 
                 st.edit("30", 1, c.F.color(99) + "process")
                 st.edit("31", 1, c.F.color(99) + "epsilon")
@@ -198,7 +198,7 @@ if __name__ == "__main__":
 
                 if result:
                     if st:
-                        st.edit("2.5", 2, c.F.color(227) + f"last result: {result}" + c.F.reset())
+                        st.edit("1", 5, c.F.color(165) + f"   last score: {result}")
                         st.press()
                     ai_expmem.append({
                         "state": frozen_state,
@@ -254,7 +254,7 @@ if __name__ == "__main__":
                 status = min(ping_dif // 4, 2)
                 label = [c.F.color(84) + "OK",
                          c.F.color(208) + "LONG",
-                         c.F.color(196) + c.S.style(1) + c.S.style(5) + "DEAD"][status]
+                         c.F.color(196) + c.S.style(1) + "DEAD"][status]
                 if status != agents_info[a_conn][2]:
                     agents_info[a_conn][2] = status
                     if st:

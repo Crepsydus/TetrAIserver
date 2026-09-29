@@ -76,9 +76,9 @@ class Agent:
     target_model = None
     action_model = None
     mode = 0
-    step_count = 0
+    watched = 0
     episode_count = 0
-    epsilon = 0.03
+    epsilon = 0.0
     st = None
 
     #-------------------------------------
@@ -94,8 +94,9 @@ class Agent:
 
     training_buffer = deque(maxlen=1024*1024)
 
-    batch_size = 256
-    batch_new_portion = 128
+    batch_size = 512
+    batch_new_portion = 64
+    exp_save_threshold = 256 # how much exp to collect
 
     regularizer = l2(0.001)
     explode_threshold = 100
@@ -104,7 +105,6 @@ class Agent:
     #TM_soft_rate = 0.08      # every step
 
     save_interval = 5 # episodes
-    exp_save_threshold = 256 # how much exp to collect
     collecting_buffer = deque(maxlen=exp_save_threshold * 256)
     save_count = 8    # how many checkpoints to store
     load_index = -1   # which checkpoint to load
@@ -118,6 +118,7 @@ class Agent:
     last_loaded_checkpoint = ""
     calling_socket = None
     action_count = 0
+    last_loaded = 0
 
     def __init__(self, index, config, srv_ports, terminal):
         self.id = index
@@ -154,23 +155,20 @@ class Agent:
             self.st.add_rect("2", 46, 0, 92, 8, True, c.F.color(57))
             self.st.add_rect("2.5", 68, 1, 91, 7, False)
 
-            self.edit("2", 1, c.F.color(99) + " episode:")
-            self.edit("2", 2, c.F.color(99) + "    step:")
-            self.edit("2", 3, c.F.color(99) + " watched:")
-            self.edit("2", 4, c.F.color(99) + f" epsilon:{c.F.color(201)} {self.epsilon:.2f}")
-            self.edit("2", 5, c.F.color(99) + "  buffer:")
-            self.edit("2.5", 2, c.F.color(227) + "last result:")
+            self.edit("2", 1, c.F.color(34) +  "  ◷ learn: 0")
+            self.edit("2", 2, c.F.color(34) +  "  ◷   run: 0")
+            self.edit("2", 3, c.F.color(99) + f"  watched: {self.watched}")
+            self.edit("2", 4, c.F.color(99) + f"   buffer: 0/{self.min_exp_threshold}")
+            self.edit("2", 5, c.F.color(55) + f"   stored: 0")
 
-            if self.GPU:
-                self.edit("2.5", 6, c.F.color(84) + " " * 21 + "GPU")
-            else:
-                self.edit("2.5", 6, c.F.color(35) + " " * 21 + "CPU")
 
-            self.edit("1", 1, c.F.color(45) + "    mean Q:")
-            self.edit("1", 2, c.F.color(45) + "    last Q:")
-            self.edit("1", 3, c.F.color(45) + "      loss:")
-            self.edit("1", 4, c.F.color(35) + " learntime:")
-            self.edit("1", 5, c.F.color(35) + "  worktime:")
+            self.edit("1", 0, c.F.color(22) + "CPU")
+            self.edit("1", 1, c.F.color(27) +  "    mean Q:")
+            self.edit("1", 2, c.F.color(27) +  "    last Q:")
+            self.edit("1", 3, c.F.color(27) +  "      loss:")
+            self.edit("1", 4, c.F.color(27) + f"     batch: {self.batch_size}")
+            self.edit("1", 5, c.F.color(165) + "   last score:")
+
             self.update()
 
             self.compile_models()
@@ -213,7 +211,7 @@ class Agent:
             count = config.count(self.mode)
 
             min_eps = 0.05
-            max_eps = 0.81
+            max_eps = 0.75
             dif = max_eps - min_eps
             epsilons = []
             if count == 1:
@@ -334,9 +332,6 @@ class Agent:
 
         self.action_model = tf.keras.models.clone_model(self.model)
 
-        self.episode_count = tf.Variable(0)
-        self.step_count = tf.Variable(0)
-
 
     def learn(self, exp_seq):
         new_exp_seq = exp_seq.copy()
@@ -353,14 +348,22 @@ class Agent:
                 self.save_replay()
                 if self.mode == 2:
                     self.restore_np()
-            elif len(self.training_buffer) < self.min_exp_threshold:
-                self.load_replays(True)
+            if self.mode == 0:
+                if len(self.training_buffer) < self.min_exp_threshold:
+                    self.load_replays(True)
+
             self.collecting_buffer.clear()
 
+        count = 0
+        for i in os.listdir(self.exps_dir):
+            folder = os.path.join(self.exps_dir, i)
+            files = glob.glob(os.path.join(folder, "exp_*.pkl"))
+            for file in files:
+                count += int(file.split("exp_")[-1].split("_")[1].split(".pkl")[0])
+        self.edit("2", 5, c.F.color(55) + f"   stored: {count}")
 
         if len(self.training_buffer) > self.min_exp_threshold and self.mode == 0:
-            if self.step_count % 10 == 0:
-                np.random.shuffle(self.training_buffer)
+
             tbefore = time.time()
             if len(new_exp_seq) < self.batch_new_portion:
                 raw_batch1 = []
@@ -396,6 +399,7 @@ class Agent:
             del states, next_states, actions, rewards, overs
 
             loss, qm, ch, r = self.tf_learn(s_n, ns_n, a_n, r_n, o_n)
+            self.watched += self.batch_size
 
             del s_n, ns_n, a_n, r_n, o_n
 
@@ -404,15 +408,15 @@ class Agent:
             ch = ch.numpy()
             r = r.numpy()
 
-            self.edit("1", 2, c.F.color(45) + f"    last Q: p {ch:.3f} | r {r}")
+            self.edit("1", 2, c.F.color(27) + f"    last Q: p {ch:.3f} | r {r}")
 
             if not (qm > self.explode_threshold or
                     qm < -self.explode_threshold):
-                self.edit("1", 1, c.F.color(45) + f"    mean Q: {qm:.3f}")
+                self.edit("1", 1, c.F.color(27) + f"    mean Q: {qm:.3f}")
 
             if not (loss > self.explode_threshold or
                     loss < -self.explode_threshold):
-                self.edit("1", 3, c.F.color(45) + f"      loss: {loss:.5f}{c.B.reset()}")
+                self.edit("1", 3, c.F.color(27) + f"      loss: {loss:.5f}{c.B.reset()}")
 
             if (qm > self.explode_threshold or
                     qm < -self.explode_threshold):
@@ -420,9 +424,8 @@ class Agent:
             if (loss > self.explode_threshold or
                     loss < -self.explode_threshold):
                 self.edit("1", 3, f"{c.B.color(1)}{c.F.color(0)}      loss: {loss:.5f}{c.B.reset()}")
-            self.edit("2", 5, c.F.color(99) + f"  buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
-            self.edit("2", 2, c.F.color(99) + f"    step: {self.step_count // 1}")
-            self.edit("2", 3, c.F.color(99) + f" watched: {self.batch_size * self.step_count}")
+            self.edit("2", 4, c.F.color(99) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
+            self.edit("2", 3, c.F.color(99) + f"  watched: {self.watched}")
             
             
             self.action_model.set_weights(self.model.get_weights())
@@ -431,11 +434,9 @@ class Agent:
             #                                  self.model.trainable_variables):
             #     target_var.assign(self.TM_soft_rate * model_var + (1.0 - self.TM_soft_rate) * target_var)
 
-            self.step_count.assign_add(1)
-
             tafter = time.time()
-            self.edit("1", 4, c.F.color(35) + f" learntime: {(tafter-tbefore):.4f}")
-            self.edit("1", 5, c.F.color(35) + f"  worktime: {time_stamp(self.started_at)}")
+            self.edit("2", 1, c.F.color(34) + f"  ◷ learn: {(tafter-tbefore):.4f}")
+            self.edit("2", 2, c.F.color(34) + f"  ◷   run: {time_stamp(self.started_at)}")
             self.update()
 
 
@@ -501,22 +502,22 @@ class Agent:
 
     def new_episode(self):
         if self.mode == 0:
-            self.episode_count.assign_add(1)
+            self.episode_count += 1
             if self.episode_count % self.save_interval == 0:
-                if self.id == 0:
-                    self.save_np()
+                self.save_np()
+            if self.episode_count % 2 == 0:
+                np.random.shuffle(self.training_buffer)
 
-            self.edit("2", 1, c.F.color(99) + f" episode: {self.episode_count // 1}")
-            self.edit("2", 2, c.F.color(99) + f"    step: {self.step_count // 1}")
-            self.edit("2", 3, c.F.color(99) + f" watched: {self.batch_size * self.step_count}")
-            self.edit("2", 5, c.F.color(99) + f"  buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
+            self.edit("2", 3, c.F.color(99) + f"  watched: {self.watched}")
+
+            self.edit("2", 4, c.F.color(99) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
             self.update()
 
-        if self.mode == 1:
-            common_exps = 0
-            for folder in [os.path.join(self.exps_dir, i) for i in os.listdir(self.exps_dir)]:
-                for file in glob.glob(os.path.join(folder, "exp_*.pkl")):
-                    common_exps += int(file.split("_")[-1].split(".pkl")[0])
+        # if self.mode == 1:
+        #     common_exps = 0
+        #     for folder in [os.path.join(self.exps_dir, i) for i in os.listdir(self.exps_dir)]:
+        #         for file in glob.glob(os.path.join(folder, "exp_*.pkl")):
+        #             common_exps += int(file.split("_")[-1].split(".pkl")[0])
 
 
     def save_np(self):
@@ -525,10 +526,10 @@ class Agent:
         # np.savez(os.path.join(self.checkpoint_path, f"checkpoint_ep{self.episode_count.numpy()}_{self.step_count.numpy()}.npz"),
         #          *main_weights)
         # self.model.save_weights()
-        self.model.save(os.path.join(self.checkpoint_path, f"ckpt_ep{self.episode_count.numpy()}_{self.step_count.numpy()}.keras"))
+        self.model.save(os.path.join(self.checkpoint_path, f"checkpoint_{self.watched}.keras"))
         self.roll("0",c.F.color(2) + f"[{time_stamp()}] saved model")
-        files = sorted(glob.glob(os.path.join(self.checkpoint_path, "ckpt_ep*.keras")),
-                       key = lambda x: int(x.split("_ep")[-1][:-4].split("_")[0]))
+        files = sorted(glob.glob(os.path.join(self.checkpoint_path, "checkpoint_*.keras")),
+                       key = lambda x: int(x.split("_")[-1][:-6]))
 
         if len(files)>self.save_count:
             for f in files[:-self.save_count]:
@@ -536,22 +537,25 @@ class Agent:
 
 
     def restore_np(self):
-        files = sorted(glob.glob(os.path.join(self.checkpoint_path, "ckpt_ep*.keras")))
+        files = sorted(glob.glob(os.path.join(self.checkpoint_path, "checkpoint_*.keras")))
 
         if not files:
             self.roll("0",c.F.color(202) + f"[{time_stamp()}] no checkpoint files")
             return
 
-        checkpoint = files[self.load_index]
-        if checkpoint != self.last_loaded_checkpoint:
-            self.model = tf.keras.models.load_model(os.path.abspath(checkpoint))
+        if abs(self.load_index) <= len(files):
+            checkpoint = files[self.load_index]
+            if checkpoint != self.last_loaded_checkpoint:
+                self.model = tf.keras.models.load_model(os.path.abspath(checkpoint))
 
-            self.action_model.set_weights(self.model.get_weights())
+                self.action_model.set_weights(self.model.get_weights())
 
-            self.episode_count.assign(int(checkpoint.split("_ep")[-1][:-6].split("_")[0]))
-            self.step_count.assign(int(checkpoint.split("_ep")[-1][:-6].split("_")[1]))
-            self.roll("0",c.F.color(2) + f"[{time_stamp()}] restored")
-            self.last_loaded_checkpoint = checkpoint
+                self.watched = int(checkpoint.split("_")[-1][:-6])
+
+                self.roll("0",c.F.color(2) + f"[{time_stamp()}] restored")
+                self.last_loaded_checkpoint = checkpoint
+        else:
+            self.roll("0", c.F.color(202) + f"[{time_stamp()}] less than [load index] checkpoints")
 
 
     def save_replay(self):
@@ -583,8 +587,9 @@ class Agent:
                     self.training_buffer.extend(buffer)
                     count += len(buffer)
 
-            self.edit("2", 5, c.F.color(99) + f"  buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
-            self.edit("2.5", 5, c.F.color(22) + f"+{count}")
+            self.last_loaded = count
+            self.edit("2", 4, c.F.color(99) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
+            self.edit("2.5", 4, c.F.color(28) + f"+{count}")
             self.roll("0", c.F.color(2) + f"[{time_stamp()}] loaded {count} exps")
 
 
