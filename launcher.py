@@ -43,7 +43,12 @@ def socket_ports(s:socket.socket):
     return f"[{s.getsockname()[1]} <-> {s.getpeername()[1]}]"
 
 #----------------
-sims = [0,2,2,2,1,1] # 0 - Head, learner; 1 - random (epsilon=1, little tweaks to the chances); 2 - smart agent, uses AI to decide + epsilon
+sims = ["hl", "ca", "cae", "r", "r"]
+# hl - Head Learner (eps=0)
+# ca - Collection agent (ai, no epsilon)
+# cae - Collecting agent (ai + epsilon)
+# r - Random collector (eps=1)
+# pd - Player Demonstrate (eps=0, no learning)
 no_sim_for = []   # use for Godot-env tests (type indexes of the sim(s) in sims array)
 debug_sims = False  # launch godot console with the sims (kinda useless, cus they close almost immediately after encountering errors)
 selfplay = 0  # 1 = let yourself control the game (only one sim)
@@ -54,12 +59,13 @@ sims_count = len(sims)
 if sims_count >= 10:
     print(c.B.color(124) + "TOO MANY SIMULATIONS")
     quit()
-if sims.count(0) > 1:
+if sims.count("hl") > 1:
     print(c.B.color(124) + "wrong launch configuration")
     quit()
 if selfplay and sims_count != 1:
     print(c.B.color(124) + "wrong launch configuration")
     quit()
+
 
 all_processes = {}
 s_sockets = []
@@ -78,10 +84,9 @@ sync_socket.listen(sims_count)
 for i in range(sims_count):
     type = sims[i]
     with open(rf"logs\stderr\{i}.txt", "w") as errf:
-        if type == 0:
+        if type == "hl":
             process1 = sp.Popen(
-                        #f"{python_exec} -u {python_program} {s_ports} 0 {selfplay} {sims} {launcher_port}",
-                        [python_exec, '-u',python_program, str(s_ports), "0", str(selfplay), str(sims), str(launcher_port)],
+                        [python_exec, '-u', python_program, str(s_ports), str(i), str(selfplay), str(sims), str(launcher_port)],
                         creationflags=sp.CREATE_NEW_CONSOLE,
                         startupinfo=si,
                         #stderr=errf,
@@ -89,7 +94,7 @@ for i in range(sims_count):
             print(c.F.color(84) + f"Server started on port {s_ports[i]} in mode {type}" + c.F.reset())
             all_processes[str(s_ports[i])] = (process1, True, True)
 
-        elif type > 0:
+        else:
             process2 = sp.Popen(
                 [python_exec, python_program, str(s_ports), str(i), str(selfplay), str(sims), str(launcher_port)],
                 creationflags=sp.CREATE_NEW_PROCESS_GROUP,

@@ -81,59 +81,54 @@ class Agent:
     episode_count = 0
     epsilon = 0.0
     st = None
+    calling_socket = None
+    action_count = 0
+    last_loaded = 0
+    last_loaded_checkpoint = ""
+    started_at = 0
+    custom_probs = []
 
-    #-------------------------------------
+    #------------HYPER-PARAMETERS------------
     gamma = 0.9 #future coef
-
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
     checkpoint_path = r"checkpoints"
     exps_dir = r"exps"
-    GPU = False
 
     min_exp_threshold = 1024*1  #exp without learning
-
     training_buffer = deque(maxlen=1024*1024)
 
     batch_size = 512
     batch_new_portion = 64
     exp_save_threshold = 256 # how much exp to collect
 
-    #regularizer = l2(0.001)
+    min_epsilon_2 = 0.05
+    max_epsilon_2 = 0.75
+
     explode_threshold = 100
-
-    #TM_start_randomness = 0
-    #TM_soft_rate = 0.08      # every step
-
     save_interval = 5 # episodes
     collecting_buffer = deque(maxlen=exp_save_threshold * 256)
-    save_count = 8    # how many checkpoints to store
+    save_count = 5    # how many checkpoints to store
     load_index = -1   # which checkpoint to load
-
     print_model_shape = True
 
     #-----------------------------------------
     personal_exp_dir = exps_dir
-    started_at = 0
-    custom_probs = []
-    last_loaded_checkpoint = ""
-    calling_socket = None
-    action_count = 0
-    last_loaded = 0
+
 
     def __init__(self, index, config, srv_ports, terminal):
         self.id = index
-        self.mode = config[index]
+        self.mode = ["hl", "r", "cae", "ca", "pd"].index(config[index])
         group_index = config[:index].count(self.mode)
         phone_port = srv_ports[self.id] + 100
         self.st = terminal
 
-        if not self.GPU:
-            tf.config.set_visible_devices([], 'GPU')
-            gpus = tf.config.list_physical_devices('GPU')
-            if gpus:
-                for gpu in gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
+        # if not self.GPU:
+        #     tf.config.set_visible_devices([], 'GPU')
+        #     gpus = tf.config.list_physical_devices('GPU')
+        #     if gpus:
+        #         for gpu in gpus:
+        #             tf.config.experimental.set_memory_growth(gpu, True)
 
         self.personal_exp_dir = os.path.join(self.exps_dir, str(self.id))
         if not os.path.isdir(self.personal_exp_dir):
@@ -194,7 +189,7 @@ class Agent:
                 c.F.color(227) + f"finished init, working on {self.model.weights[0].numpy().device}")
             self.started_at = time.time()
 
-        if self.mode == 1:
+        elif self.mode == 1:
             match group_index:
                 case 0: probs = [8, 8, 2, 2, 3, 3, 3, 2]
                 case 1: probs = [2, 2, 2, 1, 2, 2, 2, 2]
@@ -204,25 +199,28 @@ class Agent:
 
             self.custom_probs = [i/sum(probs) for i in probs]
 
-        if self.mode == 2:
+        elif self.mode < 4:
             self.compile_models()
             self.restore_np()
             self.load_index = -2
 
-            count = config.count(self.mode)
+            if self.mode == 2:
+                count = config.count(self.mode)
 
-            min_eps = 0.05
-            max_eps = 0.75
-            dif = max_eps - min_eps
-            epsilons = []
-            if count == 1:
-                epsilons = [np.mean([min_eps, max_eps])]
-            if count > 1:
-                increment = dif/(count-1)
-                for i in range(count):
-                    epsilons.append(min_eps + increment*i)
+                dif = self.max_epsilon_2 - self.min_epsilon_2
+                epsilons = []
+                if count == 1:
+                    epsilons = [np.mean([self.min_epsilon_2, self.max_epsilon_2])]
+                if count > 1:
+                    increment = dif/(count-1)
+                    for i in range(count):
+                        epsilons.append(self.min_epsilon_2 + increment*i)
 
-            self.epsilon = epsilons[group_index]
+                self.epsilon = epsilons[group_index]
+
+        elif self.mode == 4:
+            self.compile_models()
+            self.restore_np()
 
         if self.mode > 0:
             self.calling_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -351,14 +349,16 @@ class Agent:
                 raw_batch2 = new_exp_seq[-self.batch_new_portion:]
                 raw_batch = raw_batch1 + raw_batch2
 
-            s, ns, actions, rewards, overs = zip(*raw_batch)
+            s, ns, values, actions, rewards, logs, overs = zip(*raw_batch)
+            v = tf.constant(values, dtype=tf.float32)
             a = tf.constant(actions)
             r = tf.constant(rewards, dtype=tf.float32)
+            l = tf.constant(logs, dtype=tf.float32)
             o = tf.constant(overs, dtype=tf.bool)
 
             del actions, rewards, overs
 
-            loss, qm, ch, r = self.tf_learn(s, ns, a, r, o)
+            loss, qm, ch, r = self.tf_learn(s, ns, v, a, r, l, o)
             self.watched += self.batch_size
 
             del s, ns, a, r, o
@@ -397,29 +397,28 @@ class Agent:
 
 
     @tf.function
-    def tf_learn(self, states, next_states, actions, rewards, overs):
+    def tf_learn(self, states, next_states, values: tf.Tensor,
+                 actions, rewards: tf.Tensor, logs: tf.Tensor,
+                 overs: tf.Tensor):
 
         with tf.GradientTape() as tape:
             action_mask = tf.one_hot(actions, 8)
-            acts, vals = self.model(states, training=True)
+            logits, vals = self.model(states, training=True)
+
+            mask = tf.cast([tf.constant(s[5]) for s in states], tf.bool)
+            logits = tf.where(mask, logits, tf.fill(tf.shape(logits), -1e8))
+
+            actions_t = tf.random.categorical(logits, 1)[0, 0]
+            log_probs = tf.nn.log_softmax(logits)
+            log_probs_a = tf.gather(log_probs, actions_t, batch_dims=1)
+            ratio = tf.exp(log_probs_a - logs)
 
 
 
-            loss = tf.keras.losses.Huber()(rewards, chosen_action_q) # <- estimated
-        grads = tape.gradient(loss, self.model.trainable_variables)
-        grads, _ = tf.clip_by_global_norm(grads, 1)
 
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
-
-        mean_q = tf.reduce_mean(chosen_action_q)
 
         return loss, mean_q, chosen_action_q[-1], rewards[-1]
 
-
-# TODO: Решить, использовать ли вероятностный выбор действия, или строго максимальный
-#   сэмплинг подходит для сбора опыта
-#   максимальное значение обеспечит наилучший ход
-#   [!] Для главной модели сделать максимальный, а для сборщиков - сэмплинг?
 
     def action(self, state):
         if self.mode > 0:
@@ -438,9 +437,12 @@ class Agent:
         logits, value = self.model(state_ex)
         mask = tf.cast(state_ex[5], tf.bool)
         logits = tf.where(mask, logits, tf.fill(tf.shape(logits), -1e8))
-        if self.mode == 0:
-            return state, tf.argmax(logits, axis=-1)[0].numpy()
-        else:
+
+        action_t = tf.argmax(logits, axis=-1)[0] if self.mode == 0 else tf.random.categorical(logits, 1)[0,0]
+        log_probs = tf.nn.log_softmax(logits)
+        log_prob_a = tf.gather(log_probs, action_t, batch_dims=1)
+
+        return state, action_t.numpy(), value, log_prob_a
 
 
     def new_episode(self):

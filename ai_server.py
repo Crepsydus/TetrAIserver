@@ -54,7 +54,7 @@ created_sockets = []
 st = None
 
 if __name__ == "__main__":
-    if config[srv_idx] == 0:
+    if config[srv_idx] == "hl":
         st = StaticTerminal(maximized=True, auto_update=False)
 
         st.roll("0", c.F.color(2)+f"[{port}] started")
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     receiver_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 2))
     receiver_socket.settimeout(60)
     receiver_socket.bind((HOST, port))
-    backlog = len(config)+1 if config[srv_idx] == 0 else 2
+    backlog = len(config)+1 if config[srv_idx] == "hl" else 2
     receiver_socket.listen(backlog)
 
     client_conn, addr = receiver_socket.accept()
@@ -91,7 +91,7 @@ if __name__ == "__main__":
 
 
     agents_info = {}
-    if config[srv_idx] == 0:
+    if config[srv_idx] == "hl":
         if len(config) > 1:
             if st:
                 st.add_rect("3",58,8,92, 11 + backlog - 1, True, c.F.color(57))
@@ -132,6 +132,8 @@ if __name__ == "__main__":
     new_state = []
     action = -1
     move_reward = 0
+    log = 0
+    value = 0
 
     while True:
         # reading ALL sockets
@@ -200,16 +202,19 @@ if __name__ == "__main__":
                     if st:
                         st.edit("1", 5, c.F.color(165) + f"   last score: {result}")
                         st.press()
-                    ai_expmem.append([
-                        frozen_state,
-                        frozen_state,
-                        action,
-                        clip(-800+result, -800, -100),
-                        True,
-                    ])
+                    if config[srv_idx] != "pd":
+                        ai_expmem.append([
+                            frozen_state,
+                            frozen_state,
+                            value,
+                            action,
+                            clip(-800+result, -800, -100),
+                            log,
+                            True,
+                        ])
+                        agent.learn(ai_expmem)
 
                     await_next_msg = False
-                    agent.learn(ai_expmem)
                     agent.new_episode()
 
                     ai_expmem.clear()
@@ -217,27 +222,33 @@ if __name__ == "__main__":
                     client_conn.sendall((json.dumps({"action": -1, "starter": True}) + "\n").encode())
                 else:
                     if await_next_msg:
-                        ai_expmem.append([
-                            frozen_state,
-                            new_state,
-                            action,
-                            move_reward,
-                            False,
-                        ])
+                        if config[srv_idx] != "pd":
+                            ai_expmem.append([
+                                frozen_state,
+                                new_state,
+                                value,
+                                action,
+                                move_reward,
+                                log,
+                                False,
+                            ])
 
-                        if action == 3:
-                            agent.learn(ai_expmem)
-                            ai_expmem.clear()
+                            if action == 3:
+                                agent.learn(ai_expmem)
+                                ai_expmem.clear()
+
+                    else:
+                        await_next_msg = True
 
                     if not player_play:
-                        frozen_state, action = agent.action(new_state)
+                        frozen_state, action, value, log = agent.action(new_state)
                         dump = json.dumps({"action": action, "reward": move_reward}) + "\n"
                         client_conn.sendall(dump.encode())
-                    await_next_msg = True
+
 
 
         # processing agents' pings
-        if config[srv_idx] == 0:
+        if config[srv_idx] == "hl":
             for a_conn in agents_info.keys():
                 idx = agents_info[a_conn][0]
 
