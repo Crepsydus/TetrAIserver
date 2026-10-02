@@ -200,13 +200,14 @@ if __name__ == "__main__":
                     if st:
                         st.edit("1", 5, c.F.color(165) + f"   last score: {result}")
                         st.press()
-                    ai_expmem.append({
-                        "state": frozen_state,
-                        "action": action,
-                        "reward": clip(-800+result, -800, -100),
-                        "over": True,
-                        "next_state": frozen_state,
-                    })
+                    ai_expmem.append([
+                        frozen_state,
+                        frozen_state,
+                        action,
+                        clip(-800+result, -800, -100),
+                        True,
+                    ])
+
                     await_next_msg = False
                     agent.learn(ai_expmem)
                     agent.new_episode()
@@ -216,13 +217,13 @@ if __name__ == "__main__":
                     client_conn.sendall((json.dumps({"action": -1, "starter": True}) + "\n").encode())
                 else:
                     if await_next_msg:
-                        ai_expmem.append({
-                            "state": frozen_state,
-                            "action": action,
-                            "reward": move_reward,
-                            "over": False,
-                            "next_state": new_state,
-                        })
+                        ai_expmem.append([
+                            frozen_state,
+                            new_state,
+                            action,
+                            move_reward,
+                            False,
+                        ])
 
                         if action == 3:
                             agent.learn(ai_expmem)

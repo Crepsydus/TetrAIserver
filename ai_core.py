@@ -5,31 +5,32 @@ import tensorflow as tf
 
 from tensorflow.keras.layers import (Dense, Dropout, Conv1D, Conv2D, MaxPooling2D, BatchNormalization,
                                      Input, Concatenate, GlobalAveragePooling1D, GlobalAveragePooling2D,
-                                     Add, Layer, Subtract, Multiply)
+                                     Add, Layer, Subtract, Multiply, Activation, LayerNormalization, Reshape,
+                                     Flatten,
+                                     )
 from tensorflow.keras.regularizers import l2
-from tensorflow.keras.saving import register_keras_serializable
+from tensorflow.keras.initializers import Orthogonal
 
 import numpy as np
 from collections import deque
 import static.colorful as c
-from static.static_terminal import StaticTerminal
 
-@register_keras_serializable()
-class ReduceMeanLayer(Layer):
-    def __init__(self, keepdims=True, **kwargs):
-        super().__init__(**kwargs)
-        self.keepdims = keepdims
-
-    def call(self, inputs):
-        return tf.reduce_mean(inputs, axis=1, keepdims=self.keepdims)
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], 1)
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({"keepdims": self.keepdims})
-        return config
+# @register_keras_serializable()
+# class ReduceMeanLayer(Layer):
+#     def __init__(self, keepdims=True, **kwargs):
+#         super().__init__(**kwargs)
+#         self.keepdims = keepdims
+#
+#     def call(self, inputs):
+#         return tf.reduce_mean(inputs, axis=1, keepdims=self.keepdims)
+#
+#     def compute_output_shape(self, input_shape):
+#         return (input_shape[0], 1)
+#
+#     def get_config(self):
+#         config = super().get_config()
+#         config.update({"keepdims": self.keepdims})
+#         return config
 
 def global_var_sum(vars):
     s = 0
@@ -98,7 +99,7 @@ class Agent:
     batch_new_portion = 64
     exp_save_threshold = 256 # how much exp to collect
 
-    regularizer = l2(0.001)
+    #regularizer = l2(0.001)
     explode_threshold = 100
 
     #TM_start_randomness = 0
@@ -245,82 +246,54 @@ class Agent:
         move_mem_i = Input(shape=[8, 9], name="move_mem")
         valids_i = Input(shape=[8, ], name="valids")
 
-        board_n = Conv2D(32, [3, 3], padding="same",
-                         activation="relu", kernel_regularizer=self.regularizer)(board_i)
-        board_n = BatchNormalization()(board_n)
-        board_n = Conv2D(32, [3, 3], padding="same",
-                         activation="relu", kernel_regularizer=self.regularizer)(board_n)
-        board_n = MaxPooling2D((2, 2))(board_n)
+        b = Conv2D(32, (3, 1), padding="same")(board_i)
+        b = LayerNormalization()(b)
+        b = Activation("relu")(b)
 
-        board_n = Conv2D(64, [3, 3], padding="same",
-                         activation="relu", kernel_regularizer=self.regularizer)(board_n)
-        board_n = BatchNormalization()(board_n)
-        board_n = Conv2D(64, [3, 3], padding="same",
-                         activation="relu", kernel_regularizer=self.regularizer)(board_n)
-        board_n = MaxPooling2D((2, 2))(board_n)
+        b = Conv2D(64, (3, 1), padding="same")(b)
+        b = LayerNormalization()(b)
+        b = Activation("relu")(b)
 
-        board_n = Conv2D(128, [3, 3], padding="same",
-                         activation="relu", kernel_regularizer=self.regularizer)(board_n)
-        board_n = BatchNormalization()(board_n)
-        board_n = GlobalAveragePooling2D()(board_n)
-        board_n = Dense(256, activation="relu", kernel_regularizer=self.regularizer)(board_n)
+        b = Conv2D(64, (3, 1), padding="same")(b)
+        b = LayerNormalization()(b)
+        b = Activation("relu")(b)
 
-        ctype_n = Dense(32, activation="relu", kernel_regularizer=self.regularizer)(ctype_i)
+        b = Conv2D(64, (24, 1), padding="same")(b)
+        b = LayerNormalization()(b)
+        b = Activation("relu")(b)
+        b = Reshape((10, 64))(b)
+        b = Flatten()(b)
+        b = Dense(128, activation="relu")(b)
 
-        ntype_n = Dense(32, activation="relu", kernel_regularizer=self.regularizer)(ntype_i)
 
-        htype_n = Dense(32, activation="relu", kernel_regularizer=self.regularizer)(htype_i)
+        t = Concatenate()([ctype_i, ntype_i, htype_i])
+        t = Dense(32, activation="relu")(t)
+        t = Dense(32, activation="relu")(t)
 
-        move_mem_n = Conv1D(32, kernel_size=3, padding="same",
-                            activation="relu", kernel_regularizer=self.regularizer)(move_mem_i)
-        move_mem_n = Conv1D(32, kernel_size=3, padding="same",
-                            activation="relu", kernel_regularizer=self.regularizer)(move_mem_n)
-        move_mem_n = GlobalAveragePooling1D()(move_mem_n)
-        move_mem_n = Dense(32, activation="relu", kernel_regularizer=self.regularizer)(move_mem_n)
+        m = Conv1D(64, kernel_size=3, padding="same")(move_mem_i)
+        m = Conv1D(64, kernel_size=3, padding="same")(m)
+        m = GlobalAveragePooling2D()(m)
 
-        valids_n = Dense(16, activation="relu", kernel_regularizer=self.regularizer)(valids_i)
+        v = Dense(16, activation="relu")(valids_i)
 
-        combined_n = Concatenate()([
-            board_n,
-            ctype_n,
-            ntype_n,
-            htype_n,
-            move_mem_n,
-            valids_n,
-        ])
+        x = Concatenate()([b, t, m, v])
+        x = Dense(128, activation="relu")(x)
+        x = Dense(64, activation="relu")(x)
 
-        x = Dense(512, activation="relu", kernel_regularizer=self.regularizer)(combined_n)
-        x = BatchNormalization()(x)
-        x = Dropout(0.2)(x)
+        act_q = Dense(8, kernel_initializer=Orthogonal(gain=0.01), name="act")(x)
 
-        residue_n = Dense(512, activation="relu", kernel_regularizer=self.regularizer)(x)
-        residue_n = BatchNormalization()(residue_n)
-
-        x = Add()([x, residue_n])
-        x = Dense(512, activation="relu", kernel_regularizer=self.regularizer)(x)
-        x = Dropout(0.2)(x)
-
-        #dueling output-adjacent layers
-        value = Dense(256, activation="relu")(x)
-        value = Dense(1)(value)
-
-        acts_value = Dense(256, activation="relu")(x)
-        acts_value = Dense(8)(acts_value)
-        acts_value = Multiply()([valids_i, acts_value])
-
-        act_mean = ReduceMeanLayer()(acts_value)
-
-        centered_act_value = Subtract()([acts_value, act_mean])
-        qs = Add()([value, centered_act_value])
+        crit_q = Dense(1, name="crit_d")(x)
+        crit_q = Reshape((), name="crit")(crit_q)
 
         self.model = tf.keras.Model(
-            inputs={"board": board_i,
-                    "ctype": ctype_i,
-                    "ntype": ntype_i,
-                    "htype": htype_i,
-                    "move_mem": move_mem_i,
-                    "valids": valids_i},
-            outputs=qs,
+            inputs=[board_i,
+                    ctype_i,
+                    ntype_i,
+                    htype_i,
+                    move_mem_i,
+                    valids_i],
+            outputs= [act_q,
+                      crit_q],
             name=f"A{self.id}"
         )
         if self.print_model_shape and self.mode == 0:
@@ -328,7 +301,7 @@ class Agent:
                 var = self.model.trainable_variables[i]
                 self.roll("--",c.F.color(202) + f"{i}. {var.name}: {list_str(var.shape, True)}", )
 
-        #self.target_model = tf.keras.models.clone_model(self.model)
+            self.model.summary(print_fn=lambda x: self.roll("0", f"{x}"))
 
         self.action_model = tf.keras.models.clone_model(self.model)
 
@@ -336,8 +309,8 @@ class Agent:
     def learn(self, exp_seq):
         new_exp_seq = exp_seq.copy()
 
-        for i in range(len(new_exp_seq)-2, -1, -1):
-            new_exp_seq[i]["reward"] += self.gamma * new_exp_seq[i+1]["reward"]
+        # for i in range(len(new_exp_seq)-2, -1, -1):
+        #     new_exp_seq[i]["reward"] += self.gamma * new_exp_seq[i+1]["reward"]
 
         if self.mode == 0:
             self.training_buffer.extend(new_exp_seq)
@@ -363,8 +336,8 @@ class Agent:
         self.edit("2", 5, c.F.color(55) + f"   stored: {count}")
 
         if len(self.training_buffer) > self.min_exp_threshold and self.mode == 0:
-
             tbefore = time.time()
+
             if len(new_exp_seq) < self.batch_new_portion:
                 raw_batch1 = []
                 for i in range(self.batch_size - len(new_exp_seq)):
@@ -377,31 +350,18 @@ class Agent:
                     raw_batch1.append(self.training_buffer.popleft())
                 raw_batch2 = new_exp_seq[-self.batch_new_portion:]
                 raw_batch = raw_batch1 + raw_batch2
-            states: dict[str, typing.Any] = {"board": [], "ctype": [], "ntype": [], "htype": [], "move_mem": [], "valids": []}
-            next_states: dict[str, typing.Any] = {"board": [], "ctype": [], "ntype": [], "htype": [], "move_mem": [], "valids": []}
-            actions = []
-            rewards = []
-            overs = []
-            for exp in raw_batch:
-                for key in states.keys():
-                    states[key].append(exp["state"][key])
-                    next_states[key].append(exp["next_state"][key])
-                actions.append(exp["action"])
-                rewards.append(exp["reward"])
-                overs.append(exp["over"])
 
-            s_n = {k: np.array(v) for k, v in states.items()}
-            ns_n = {k: np.array(v) for k, v in next_states.items()}
-            a_n = np.array(actions)
-            r_n = np.array(rewards)
-            o_n = np.array(overs)
+            s, ns, actions, rewards, overs = zip(*raw_batch)
+            a = tf.constant(actions)
+            r = tf.constant(rewards, dtype=tf.float32)
+            o = tf.constant(overs, dtype=tf.bool)
 
-            del states, next_states, actions, rewards, overs
+            del actions, rewards, overs
 
-            loss, qm, ch, r = self.tf_learn(s_n, ns_n, a_n, r_n, o_n)
+            loss, qm, ch, r = self.tf_learn(s, ns, a, r, o)
             self.watched += self.batch_size
 
-            del s_n, ns_n, a_n, r_n, o_n
+            del s, ns, a, r, o
 
             loss = loss.numpy()
             qm = qm.numpy()
@@ -428,11 +388,7 @@ class Agent:
             self.edit("2", 3, c.F.color(99) + f"  watched: {self.watched}")
             
             
-            self.action_model.set_weights(self.model.get_weights())
-
-            # for target_var, model_var in zip(self.target_model.trainable_variables,
-            #                                  self.model.trainable_variables):
-            #     target_var.assign(self.TM_soft_rate * model_var + (1.0 - self.TM_soft_rate) * target_var)
+            # self.action_model.set_weights(self.model.get_weights())
 
             tafter = time.time()
             self.edit("2", 1, c.F.color(34) + f"  ◷ learn: {(tafter-tbefore):.4f}")
@@ -442,22 +398,12 @@ class Agent:
 
     @tf.function
     def tf_learn(self, states, next_states, actions, rewards, overs):
-        # DDQN (Double Deep Q-learning)
-        rewards = tf.cast(rewards, dtype="float32")
-        # overs = tf.cast(overs, dtype="float32")
-        #
-        # main_qs_gamma = self.model(next_states, training=False)
-        # main_best = tf.argmax(main_qs_gamma, axis=1)
-        # act_indices = tf.stack([tf.range(self.batch_size, dtype=main_best.dtype), main_best], axis=1)
-        # target_qs_gamma = self.target_model(next_states, training=False)
-        # estimated_qs = rewards + self.gamma * (1-overs) * tf.gather_nd(target_qs_gamma, act_indices)
-        # estimated_qs = tf.stop_gradient(estimated_qs)
-
 
         with tf.GradientTape() as tape:
             action_mask = tf.one_hot(actions, 8)
-            qs = self.model(states, training=True)
-            chosen_action_q = tf.reduce_sum(action_mask*qs, axis=1)
+            acts, vals = self.model(states, training=True)
+
+
 
             loss = tf.keras.losses.Huber()(rewards, chosen_action_q) # <- estimated
         grads = tape.gradient(loss, self.model.trainable_variables)
@@ -466,10 +412,14 @@ class Agent:
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
         mean_q = tf.reduce_mean(chosen_action_q)
-        # mean_est_q = tf.reduce_mean(estimated_qs)
 
         return loss, mean_q, chosen_action_q[-1], rewards[-1]
 
+
+# TODO: Решить, использовать ли вероятностный выбор действия, или строго максимальный
+#   сэмплинг подходит для сбора опыта
+#   максимальное значение обеспечит наилучший ход
+#   [!] Для главной модели сделать максимальный, а для сборщиков - сэмплинг?
 
     def action(self, state):
         if self.mode > 0:
@@ -482,22 +432,15 @@ class Agent:
         elif random.random() < self.epsilon:
             return state, random.randint(0, 7)
 
-        state_np = {
-            "board": np.expand_dims(np.array(state["board"], dtype=np.float32), axis=(0, -1)),
-            "ctype": np.expand_dims(np.array(state["ctype"], dtype=np.float32), axis=0),
-            "ntype": np.expand_dims(np.array(state["ntype"], dtype=np.float32), axis=0),
-            "htype": np.expand_dims(np.array(state["htype"], dtype=np.float32), axis=0),
-            "move_mem": np.expand_dims(np.array(state["move_mem"], dtype=np.float32), axis=0),
-            "valids": np.expand_dims(np.array(state["valids"], dtype=np.float32), axis=0),
-        }
+        state_ex = tuple(tf.constant(s, dtype=tf.float32) for s in state)
+        state_ex = tuple(tf.expand_dims(s, axis=0) for s in state_ex)
 
-        qs = self.action_model(state_np).numpy()[0]
-
-        for i in range(8):
-            if not state["valids"][i]:
-                qs[i] = -np.inf
-
-        return state, int(np.argmax(qs))
+        logits, value = self.model(state_ex)
+        mask = tf.cast(state_ex[5], tf.bool)
+        logits = tf.where(mask, logits, tf.fill(tf.shape(logits), -1e8))
+        if self.mode == 0:
+            return state, tf.argmax(logits, axis=-1)[0].numpy()
+        else:
 
 
     def new_episode(self):
@@ -513,19 +456,9 @@ class Agent:
             self.edit("2", 4, c.F.color(99) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
             self.update()
 
-        # if self.mode == 1:
-        #     common_exps = 0
-        #     for folder in [os.path.join(self.exps_dir, i) for i in os.listdir(self.exps_dir)]:
-        #         for file in glob.glob(os.path.join(folder, "exp_*.pkl")):
-        #             common_exps += int(file.split("_")[-1].split(".pkl")[0])
 
 
     def save_np(self):
-        # main_weights = [w.numpy() for w in self.model.trainable_variables]
-        #
-        # np.savez(os.path.join(self.checkpoint_path, f"checkpoint_ep{self.episode_count.numpy()}_{self.step_count.numpy()}.npz"),
-        #          *main_weights)
-        # self.model.save_weights()
         self.model.save(os.path.join(self.checkpoint_path, f"checkpoint_{self.watched}.keras"))
         self.roll("0",c.F.color(2) + f"[{time_stamp()}] saved model")
         files = sorted(glob.glob(os.path.join(self.checkpoint_path, "checkpoint_*.keras")),
