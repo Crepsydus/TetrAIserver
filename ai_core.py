@@ -351,17 +351,17 @@ class Agent:
 
             s, ns, values, actions, rewards, logs, overs = zip(*raw_batch)
             v = tf.constant(values, dtype=tf.float32)
-            a = tf.constant(actions)
+            a = tf.constant(actions, dtype=tf.int8)
             r = tf.constant(rewards, dtype=tf.float32)
             l = tf.constant(logs, dtype=tf.float32)
             o = tf.constant(overs, dtype=tf.bool)
 
-            del actions, rewards, overs
+            del actions, rewards, overs, logs, values
 
             loss, qm, ch, r = self.tf_learn(s, ns, v, a, r, l, o)
             self.watched += self.batch_size
 
-            del s, ns, a, r, o
+            del s, ns, a, r, o, l, v
 
             loss = loss.numpy()
             qm = qm.numpy()
@@ -396,13 +396,20 @@ class Agent:
             self.update()
 
 
+    # TODO: решить, как сохранять опыт раздельно для каждой среды, не смешивая и не перемешивая
     @tf.function
     def tf_learn(self, states, next_states, values: tf.Tensor,
                  actions, rewards: tf.Tensor, logs: tf.Tensor,
                  overs: tf.Tensor):
+        advs = tf.TensorArray(tf.float32, size=self.batch_size)
+        returns = tf.TensorArray(tf.float32, size=self.batch_size)
+
+        gae = tf.constant(0, dtype=tf.float32)
+
+        for
+
 
         with tf.GradientTape() as tape:
-            action_mask = tf.one_hot(actions, 8)
             logits, vals = self.model(states, training=True)
 
             mask = tf.cast([tf.constant(s[5]) for s in states], tf.bool)
