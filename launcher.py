@@ -43,11 +43,9 @@ def socket_ports(s:socket.socket):
     return f"[{s.getsockname()[1]} <-> {s.getpeername()[1]}]"
 
 #----------------
-sims = ["hl", "ca", "cae", "r", "r"]
+sims = ["hl", "ca", "ca", "ca"]
 # hl - Head Learner (eps=0)
-# ca - Collection agent (ai, no epsilon)
-# cae - Collecting agent (ai + epsilon)
-# r - Random collector (eps=1)
+# ca - Collection agent (ai)
 # pd - Player Demonstrate (eps=0, no learning)
 no_sim_for = []   # use for Godot-env tests (type indexes of the sim(s) in sims array)
 debug_sims = False  # launch godot console with the sims (kinda useless, cus they close almost immediately after encountering errors)
@@ -60,10 +58,13 @@ if sims_count >= 10:
     print(c.B.color(124) + "TOO MANY SIMULATIONS")
     quit()
 if sims.count("hl") > 1:
-    print(c.B.color(124) + "wrong launch configuration")
+    print(c.B.color(124) + "wrong launch configuration (can't have >1 HL)")
+    quit()
+if sims.count("hl") == 1 and sims[0] != "hl":
+    print(c.B.color(124) + "wrong launch configuration (HL must be first)")
     quit()
 if selfplay and sims_count != 1:
-    print(c.B.color(124) + "wrong launch configuration")
+    print(c.B.color(124) + "wrong launch configuration (selfplay is ON, so must have only 1 sim)")
     quit()
 
 
@@ -81,12 +82,17 @@ sync_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1,
 sync_socket.bind((HOST, launcher_port))
 sync_socket.listen(sims_count)
 
+str_sims = sims[0]
+for mode in sims[1:]:
+    str_sims += f",{mode}"
+
 for i in range(sims_count):
     type = sims[i]
     with open(rf"logs\stderr\{i}.txt", "w") as errf:
         if type == "hl":
+
             process1 = sp.Popen(
-                        [python_exec, '-u', python_program, str(s_ports), str(i), str(selfplay), str(sims), str(launcher_port)],
+                        [python_exec, '-u', python_program, str(s_ports), str(i), str(selfplay), str_sims, str(launcher_port)],
                         creationflags=sp.CREATE_NEW_CONSOLE,
                         startupinfo=si,
                         #stderr=errf,
@@ -96,7 +102,7 @@ for i in range(sims_count):
 
         else:
             process2 = sp.Popen(
-                [python_exec, python_program, str(s_ports), str(i), str(selfplay), str(sims), str(launcher_port)],
+                [python_exec, python_program, str(s_ports), str(i), str(selfplay), str_sims, str(launcher_port)],
                 creationflags=sp.CREATE_NEW_PROCESS_GROUP,
                 stderr = errf
             )

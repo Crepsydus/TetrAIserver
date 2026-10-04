@@ -10,7 +10,7 @@ s_ports = json.loads(sys.argv[1])
 srv_idx = int(sys.argv[2])
 port = s_ports[srv_idx]
 player_play = bool(int(sys.argv[3]))
-config = json.loads(sys.argv[4])
+config = sys.argv[4].split(",")
 l_port = int(sys.argv[5])
 
 logging.basicConfig(
@@ -74,7 +74,20 @@ if __name__ == "__main__":
         st.roll("0", c.F.color(84) + f"client connected: {socket_ports(client_conn, False)}" + c.F.reset())
         st.press()
     buffer = {client_conn: ""}
+    if st:
+        st.add_rect("2", 46, 0, 92, 6 + backlog - 1, True, c.F.color(57))
+        st.add_rect("20", 47, 4, 57, 5 + backlog - 1, False)
+        st.add_rect("21", 58, 4, 68, 5 + backlog - 1, False)
+        st.add_rect("22", 69, 4, 79, 5 + backlog - 1, False)
+        st.add_rect("23", 80, 4, 91, 5 + backlog - 1, False)
 
+        st.edit("20", 0, c.F.color(99) + "process")
+        st.edit("21", 0, c.F.color(99) + "status")
+        st.edit("22", 0, c.F.color(44) + "loaded")
+        st.edit("23", 0, c.F.color(30) + "stored")
+
+        st.edit("20", backlog - 1, c.F.color(99) + "self")
+        st.press()
     agent = Agent(srv_idx, config, s_ports, st)
     created_sockets.append(agent.calling_socket)
 
@@ -92,18 +105,6 @@ if __name__ == "__main__":
 
     agents_info = {}
     if config[srv_idx] == "hl":
-        if len(config) > 1:
-            if st:
-                st.add_rect("3",58,8,92, 11 + backlog - 1, True, c.F.color(57))
-                st.add_rect("30", 59, 9, 69, 10 + backlog - 1, False)
-                st.add_rect("31", 70, 9, 80, 10 + backlog - 1, False)
-                st.add_rect("32", 81, 9, 91, 10 + backlog - 1, False)
-
-                st.edit("30", 1, c.F.color(99) + "process")
-                st.edit("31", 1, c.F.color(99) + "epsilon")
-                st.edit("32", 1, c.F.color(99) + "status")
-                st.press()
-
         for i in range(backlog-2):
             a_conn, addr = receiver_socket.accept()
             created_sockets.append(a_conn)
@@ -115,7 +116,7 @@ if __name__ == "__main__":
             agents_info[a_conn] = [i, 0, -1]
             buffer[a_conn] = ""
             if st:
-                st.edit("30", 2+i, c.F.color(84) + str(addr[1]))
+                st.edit("20", 1+i, c.F.color(84) + str(addr[1]))
                 st.press()
 
     receiver_socket.close()
@@ -158,7 +159,7 @@ if __name__ == "__main__":
                         agents_info.pop(conn)
                         label = c.F.color(196) + c.S.style(1) + c.S.style(5) + "DEAD"
                         if st:
-                            st.edit("32", 2 + idx, label + c.F.reset())
+                            st.edit("21", 1 + idx, label + c.F.reset())
                             st.press()
                 buffer.pop(conn)
                 break
@@ -200,7 +201,7 @@ if __name__ == "__main__":
 
                 if result:
                     if st:
-                        st.edit("1", 5, c.F.color(165) + f"   last score: {result}")
+                        st.edit("1", 4, c.F.color(112) + f" last score: {result}")
                         st.press()
                     if config[srv_idx] != "pd":
                         ai_expmem.append([
@@ -210,14 +211,14 @@ if __name__ == "__main__":
                             action,
                             clip(-800+result, -800, -100),
                             log,
-                            True,
+                            1,
                         ])
-                        agent.learn(ai_expmem)
+                        agent.collect(ai_expmem)
+                        agent.learn()
+                        ai_expmem.clear()
 
                     await_next_msg = False
                     agent.new_episode()
-
-                    ai_expmem.clear()
 
                     client_conn.sendall((json.dumps({"action": -1, "starter": True}) + "\n").encode())
                 else:
@@ -230,11 +231,12 @@ if __name__ == "__main__":
                                 action,
                                 move_reward,
                                 log,
-                                False,
+                                0,
                             ])
 
                             if action == 3:
-                                agent.learn(ai_expmem)
+                                agent.collect(ai_expmem)
+                                agent.learn()
                                 ai_expmem.clear()
 
                     else:
@@ -256,9 +258,6 @@ if __name__ == "__main__":
                 buffer[a_conn] = buffer[a_conn].split("\n")[-1]
                 for chunk in chunks:
                     msg = json.loads(chunk)
-                    if "epsilon" in msg.keys():
-                        if st:
-                            st.edit("31", 2 + idx, c.F.color(201) + f"{msg['epsilon']:.2f}" + c.F.reset())
                     if "ping" in msg.keys():
                         agents_info[a_conn][1] = int(time.time())
 
@@ -270,5 +269,5 @@ if __name__ == "__main__":
                 if status != agents_info[a_conn][2]:
                     agents_info[a_conn][2] = status
                     if st:
-                        st.edit("32", 2 + idx, label + c.F.reset())
+                        st.edit("21", 1 + idx, label + c.F.reset())
                         st.press()
