@@ -292,13 +292,13 @@ class Agent:
             cutoff_exp = 0
             for _ in range(self.batch_size):
                 batch.append(self.training_buffer.pop())
-            while not self.training_buffer[-1][6]:
+            while len(self.training_buffer) > 0 and not self.training_buffer[-1][6]:
                 cutoff_exp += 1
                 self.training_buffer.pop()
 
-            percent = cutoff_exp//(self.batch_size+cutoff_exp)
-            color = self.cutoff_colors[percent//25]
-            self.edit("2", 5, color + f"   cutoff: {percent}%")
+            percent = cutoff_exp/(self.batch_size+cutoff_exp)
+            color = self.cutoff_colors[int(percent/25)]
+            self.edit("2", 5, color + f"   cutoff: {percent:.2f}%")
 
             states, next_states, values, actions, rewards, logs, overs = zip(*batch)
             actions = tf.convert_to_tensor(actions, dtype=tf.int8)
@@ -477,7 +477,7 @@ class Agent:
                         buffer = pickle.load(f)
                     if removing:
                         os.remove(file)
-                    self.training_buffer[i].extend(buffer)
+                    self.training_buffer.extend(buffer)
                     count += len(buffer)
             self.update_stored_exp_counter()
             self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")

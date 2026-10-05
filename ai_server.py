@@ -77,8 +77,8 @@ if __name__ == "__main__":
     if st:
         height = clip(3 + backlog - 2, 8, 20)
         st.add_rect("3", 76, 0, 99, height, True, c.F.color(19))
-        st.add_rect("30", 77, 1, 88, height-2, False)
-        st.add_rect("31", 89, 1, 99, height-2, False)
+        st.add_rect("30", 77, 1, 88, height-1, False)
+        st.add_rect("31", 89, 1, 98, height-1, False)
 
         st.edit("30", 0, c.F.color(99) + "process")
         st.edit("31", 0, c.F.color(99) + "status")
