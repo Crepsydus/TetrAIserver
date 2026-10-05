@@ -59,7 +59,8 @@ class Agent:
     action_count = 0
     last_loaded_checkpoint = ""
     started_at = 0
-    training_buffer = []
+    training_buffer = deque(maxlen=1024*256)
+    cutoff_colors = [c.F.color(x) for x in [89, 124, 160, 196]]
 
     #------------HYPER-PARAMETERS------------
     gamma = 0.94  #future move coef
@@ -71,9 +72,9 @@ class Agent:
     checkpoint_path = r"checkpoints"
     exps_dir = r"exps"
 
-    min_exp_threshold = 64  #how many exp needs to be in every pool to start learning
-    batch_size = 32
-    exp_save_threshold = 128  # how much exp to collect
+    min_exp_threshold = 256  #how many exp needs to be in buffer to start learning
+    batch_size = 256
+    exp_save_threshold = 256  # how much exp to collect
 
     explode_threshold = 100
     save_interval = 5 # episodes
@@ -98,25 +99,29 @@ class Agent:
 
         if self.mode == 0:
             self.exp_save_threshold //= 2
-            self.training_buffer = [deque(maxlen=1024*128) for _ in config]
 
             if not os.path.isdir(self.checkpoint_path):
                 os.makedirs(self.checkpoint_path, exist_ok=True)
             if not os.path.isdir(self.exps_dir):
                 os.makedirs(self.exps_dir, exist_ok=True)
 
-            self.st.add_rect("--", 92, 0, 155, 45, True, c.F.color(125))
-            self.st.add_rect("1", 0, 0, 46, 9, True, c.F.color(57))
+            self.st.add_rect("--", 100, 0, 155, 45, True, c.F.color(125))
+            self.st.add_rect("1", 0, 0, 38, 8, True, c.F.color(19))
+            self.st.add_rect("2", 38, 0, 76, 8, True, c.F.color(19))
 
-            self.edit("2", 1, c.F.color(99) + f"  watched: {self.watched}")
+            self.edit("2", 1, c.F.color(93) + f"    batch: {self.batch_size}")
+            self.edit("2", 2, c.F.color(93) + f"  watched: {self.watched}")
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
+            self.edit("2", 4, c.F.color(37) + f"   stored: 0")
+            self.edit("2", 5, c.F.color(89) + f"   cutoff: 0%")
+
 
             self.edit("1", 0, c.F.color(22) + "CPU")
-            self.edit("1", 1, c.F.color(27) + f"      batch: {self.batch_size}x{len(self.training_buffer)}")
-            self.edit("1", 2, c.F.color(27) +  "       loss:")
-            self.edit("1", 3, c.F.color(27) +  "           :")
-            self.edit("1", 4, c.F.color(112) + " last score:")
-            self.edit("1", 5, c.F.color(34)  + "    ◷ learn: 0")
-            self.edit("1", 6, c.F.color(34)  + "    ◷   run: 0")
+            self.edit("1", 1, c.F.color(70) + " last score: 0")
+            self.edit("1", 2, c.F.color(27) + "       loss:")
+            self.edit("1", 3, c.F.color(27) + "           :")
+            self.edit("1", 4, c.F.color(70) + "    ◷ learn: 0.0")
+            self.edit("1", 5, c.F.color(70) + "    ◷   run: 00:00:00")
 
             self.update()
 
@@ -252,100 +257,80 @@ class Agent:
         if self.mode != 2:
             self.collecting_buffer.extend(collected)
             if self.mode == 0:
-                self.training_buffer[0].extend(collected)
+                self.training_buffer.extend(collected)
         if len(self.collecting_buffer) >= self.exp_save_threshold:
             if self.mode == 1:
                 self.save_replay()
                 self.restore_np()
             elif self.mode == 0:
-                if any([len(pool) < self.min_exp_threshold for pool in self.training_buffer[1:]]):
+                if len(self.training_buffer) < self.min_exp_threshold:
                     self.load_replays(True)
             self.collecting_buffer.clear()
 
         if self.mode == 0:
             self.update_stored_exp_counter()
-            self.update_loaded_exp_counter()
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
             self.update()
 
 
     def update_stored_exp_counter(self):
-        count_all = 0
+        count = 0
         for i in range(1, len(self.training_buffer)):
-            count = 0
             folder = os.path.join(self.exps_dir, str(i))
             files = glob.glob(os.path.join(folder, "exp_*.pkl"))
             for file in files:
                 count += int(file.split("exp_")[-1].split("_")[1].split(".pkl")[0])
-            self.edit("23", i, c.F.color(30) + str(count))
-            count_all += count
-        self.edit("23", len(self.training_buffer) + 1, c.F.color(37) + str(count_all))
 
-
-    def update_loaded_exp_counter(self):
-        count_all = len(self.training_buffer[0])
-        for i in range(1, len(self.training_buffer)):
-            count = len(self.training_buffer[i])
-            self.edit("22", i, c.F.color(44) + str(count))
-            count_all += count
-
-        self.edit("22", len(self.training_buffer), c.F.color(44) + str(len(self.training_buffer[0])))
-        self.edit("22", len(self.training_buffer) + 1, c.F.color(51) + str(count_all))
+        self.edit("2", 4, c.F.color(36) + f"   stored: {count}")
 
 
     def learn(self):
-        if all([len(pool) > self.min_exp_threshold for pool in self.training_buffer]) and self.mode == 0:
+        if len(self.training_buffer) > self.min_exp_threshold and self.mode == 0:
             tbefore = time.time()
 
-            sum_loss = 0
-            sum_a_loss = 0
-            sum_c_loss = 0
-            sum_e_loss = 0
-            for pool in self.training_buffer:
-                self.roll("0", "pool")
-                batch = []
-                for _ in range(self.batch_size):
-                    batch.append(pool.popleft())
+            batch = []
+            cutoff_exp = 0
+            for _ in range(self.batch_size):
+                batch.append(self.training_buffer.pop())
+            while not self.training_buffer[-1][6]:
+                cutoff_exp += 1
+                self.training_buffer.pop()
 
-                states, next_states, values, actions, rewards, logs, overs = zip(*batch)
-                actions = tf.convert_to_tensor(actions, dtype=tf.int8)
-                logs = tf.convert_to_tensor(logs, dtype=tf.float32)
-                states = self.put_states_to_dict(states)
-                next_states = self.put_states_to_dict(next_states)
+            percent = cutoff_exp//(self.batch_size+cutoff_exp)
+            color = self.cutoff_colors[percent//25]
+            self.edit("2", 5, color + f"   cutoff: {percent}%")
 
-                _, next_values = self.model(next_states, training=False)
-                advs, returns = self._compute_gae(rewards, values, overs, next_values)
-                loss, every_loss = self._train_step(states, actions, logs, advs, returns)
-                self.watched += self.batch_size
+            states, next_states, values, actions, rewards, logs, overs = zip(*batch)
+            actions = tf.convert_to_tensor(actions, dtype=tf.int8)
+            logs = tf.convert_to_tensor(logs, dtype=tf.float32)
+            states = self.put_states_to_dict(states)
+            next_states = self.put_states_to_dict(next_states)
 
-                del states, next_states, values, actions, rewards, logs, overs, advs, returns, next_values
+            _, next_values = self.model(next_states, training=False)
+            advs, returns = self._compute_gae(rewards, values, overs, next_values)
+            loss, every_loss = self._train_step(states, actions, logs, advs, returns)
+            self.watched += self.batch_size
+            a_loss, c_loss, e_loss = every_loss
 
-                sum_loss += loss.numpy()
-                sum_a_loss += every_loss[0].numpy()
-                sum_c_loss += every_loss[1].numpy()
-                sum_e_loss += every_loss[2].numpy()
+            del states, next_states, values, actions, rewards, logs, overs, advs, returns, next_values
 
-            mean_loss = sum_loss / len(self.training_buffer)
-            mean_a_loss = sum_a_loss / len(self.training_buffer)
-            mean_c_loss = sum_c_loss / len(self.training_buffer)
-            mean_e_loss = sum_e_loss / len(self.training_buffer)
-
-            if not (mean_loss > self.explode_threshold or
-                    mean_loss < -self.explode_threshold):
-                self.edit("1", 2, c.F.color(27) + f"       loss: {mean_loss:.5f}{c.B.reset()}")
-                self.edit("1", 3, c.F.color(27) + f"           : {c.F.color(34)}{mean_a_loss:.2f}" +
-                                                  f" {c.F.color(27)}| {mean_c_loss:.2f} | {c.F.color(92)}{mean_e_loss:.2f}{c.B.reset()}")
+            if not (loss > self.explode_threshold or
+                    loss < -self.explode_threshold):
+                self.edit("1", 2, c.F.color(27) + f"       loss: {loss:.5f}{c.B.reset()}")
+                self.edit("1", 3, c.F.color(27) + f"           : {c.F.color(34)}{a_loss:.2f}" +
+                                                  f" {c.F.color(27)}| {c_loss:.2f} | {c.F.color(92)}{e_loss:.2f}{c.B.reset()}")
 
             else:
-                self.edit("1", 2, f"{c.B.color(1)}{c.F.color(0)}       loss: {mean_loss:.5f}{c.B.reset()}")
-                self.edit("1", 3, f"{c.B.color(1)}{c.F.color(0)}           : {mean_a_loss:.2f} | {mean_c_loss:.2f} | {mean_e_loss:.2f}{c.B.reset()}")
+                self.edit("1", 2, f"{c.B.color(1)}{c.F.color(0)}       loss: {loss:.5f}{c.B.reset()}")
+                self.edit("1", 3, f"{c.B.color(1)}{c.F.color(0)}           : {a_loss:.2f} | {c_loss:.2f} | {e_loss:.2f}{c.B.reset()}")
 
 
             self.edit("2", 1, c.F.color(99) + f"  watched: {self.watched}")
-            self.update_loaded_exp_counter()
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
 
             tafter = time.time()
-            self.edit("1", 5, c.F.color(34) + f"    ◷ learn: {(tafter-tbefore):.4f}")
-            self.edit("1", 6, c.F.color(34) + f"    ◷   run: {time_stamp(self.started_at)}")
+            self.edit("1", 4, c.F.color(70) + f"    ◷ learn: {(tafter-tbefore):.4f}")
+            self.edit("1", 5, c.F.color(70) + f"    ◷   run: {time_stamp(self.started_at)}")
             self.update()
 
 
@@ -483,10 +468,9 @@ class Agent:
 
     def load_replays(self, removing = False):
         if self.mode == 0:
-            count_all = 0
-            for i in range(1,len(self.training_buffer)):
-                count = 0
-                folder = os.path.join(self.exps_dir, str(i))
+            count = 0
+            for i in os.listdir(self.exps_dir):
+                folder = os.path.join(self.exps_dir, i)
                 files = glob.glob(os.path.join(folder, "exp_*.pkl"))
                 for file in files:
                     with open(file, 'rb') as f:
@@ -495,10 +479,9 @@ class Agent:
                         os.remove(file)
                     self.training_buffer[i].extend(buffer)
                     count += len(buffer)
-                count_all += count
             self.update_stored_exp_counter()
-            self.update_loaded_exp_counter()
-            self.roll("0", c.F.color(2) + f"[{time_stamp()}] loaded {count_all} exps")
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
+            self.roll("0", c.F.color(2) + f"[{time_stamp()}] loaded {count} exps")
 
 
     def roll(self, name, content):

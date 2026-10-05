@@ -75,18 +75,14 @@ if __name__ == "__main__":
         st.press()
     buffer = {client_conn: ""}
     if st:
-        st.add_rect("2", 46, 0, 92, 6 + backlog - 1, True, c.F.color(57))
-        st.add_rect("20", 47, 4, 57, 5 + backlog - 1, False)
-        st.add_rect("21", 58, 4, 68, 5 + backlog - 1, False)
-        st.add_rect("22", 69, 4, 79, 5 + backlog - 1, False)
-        st.add_rect("23", 80, 4, 91, 5 + backlog - 1, False)
+        height = clip(3 + backlog - 2, 8, 20)
+        st.add_rect("3", 76, 0, 99, height, True, c.F.color(19))
+        st.add_rect("30", 77, 1, 88, height-2, False)
+        st.add_rect("31", 89, 1, 99, height-2, False)
 
-        st.edit("20", 0, c.F.color(99) + "process")
-        st.edit("21", 0, c.F.color(99) + "status")
-        st.edit("22", 0, c.F.color(44) + "loaded")
-        st.edit("23", 0, c.F.color(30) + "stored")
+        st.edit("30", 0, c.F.color(99) + "process")
+        st.edit("31", 0, c.F.color(99) + "status")
 
-        st.edit("20", backlog - 1, c.F.color(99) + "self")
         st.press()
     agent = Agent(srv_idx, config, s_ports, st)
     created_sockets.append(agent.calling_socket)
@@ -116,7 +112,7 @@ if __name__ == "__main__":
             agents_info[a_conn] = [i, 0, -1]
             buffer[a_conn] = ""
             if st:
-                st.edit("20", 1+i, c.F.color(84) + str(addr[1]))
+                st.edit("30", 1+i, c.F.color(84) + str(addr[1]))
                 st.press()
 
     receiver_socket.close()
@@ -159,7 +155,7 @@ if __name__ == "__main__":
                         agents_info.pop(conn)
                         label = c.F.color(196) + c.S.style(1) + c.S.style(5) + "DEAD"
                         if st:
-                            st.edit("21", 1 + idx, label + c.F.reset())
+                            st.edit("31", 1 + idx, label + c.F.reset())
                             st.press()
                 buffer.pop(conn)
                 break
@@ -201,7 +197,7 @@ if __name__ == "__main__":
 
                 if result:
                     if st:
-                        st.edit("1", 4, c.F.color(112) + f" last score: {result}")
+                        st.edit("1", 1, c.F.color(70) + f" last score: {result}")
                         st.press()
                     if config[srv_idx] != "pd":
                         ai_expmem.append([
@@ -234,10 +230,10 @@ if __name__ == "__main__":
                                 0,
                             ])
 
-                            if action == 3:
-                                agent.collect(ai_expmem)
-                                agent.learn()
-                                ai_expmem.clear()
+                            # if action == 3:
+                            #     agent.collect(ai_expmem)
+                            #     agent.learn()
+                            #     ai_expmem.clear()
 
                     else:
                         await_next_msg = True
@@ -269,5 +265,5 @@ if __name__ == "__main__":
                 if status != agents_info[a_conn][2]:
                     agents_info[a_conn][2] = status
                     if st:
-                        st.edit("21", 1 + idx, label + c.F.reset())
+                        st.edit("31", 1 + idx, label + c.F.reset())
                         st.press()
