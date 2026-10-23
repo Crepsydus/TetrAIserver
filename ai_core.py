@@ -66,14 +66,14 @@ class Agent:
     gamma = 0.94  #future move coef
     lmbd = 0.92  #future advantage coef
     critic_coef = 0.5  # weaken critic loss vs actor loss
-    entropy_coef = 0.01  # penalize for going all in to one action
+    entropy_coef = 0.05  # penalize for going all in to one action
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
     checkpoint_path = r"checkpoints"
     exps_dir = r"exps"
 
-    min_exp_threshold = 256  #how many exp needs to be in buffer to start learning
-    batch_size = 256
+    min_exp_threshold = 512  #how many exp needs to be in buffer to start learning
+    batch_size = 512
     exp_save_threshold = 256  # how much exp to collect
 
     explode_threshold = 100
@@ -111,10 +111,9 @@ class Agent:
 
             self.edit("2", 1, c.F.color(93) + f"    batch: {self.batch_size}")
             self.edit("2", 2, c.F.color(93) + f"  watched: {self.watched}")
-            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
             self.edit("2", 4, c.F.color(37) + f"   stored: 0")
             self.edit("2", 5, c.F.color(89) + f"   cutoff: 0%")
-
 
             self.edit("1", 0, c.F.color(22) + "CPU")
             self.edit("1", 1, c.F.color(70) + " last score: 0")
@@ -202,12 +201,18 @@ class Agent:
         v = Dense(16, activation="relu")(valids_i)
 
         x = Concatenate()([b, t, m, v])
+        x = Dense(256, activation="relu")(x)
         x = Dense(128, activation="relu")(x)
-        x = Dense(64, activation="relu")(x)
 
-        act_q = Dense(8, kernel_initializer=Orthogonal(gain=0.01), name="act")(x)
+        act_q = Dense(64, activation="relu")(x)
+        act_q = Dense(8, kernel_initializer=Orthogonal(gain=0.01), name="act")(act_q)
 
-        crit_q = Dense(1, name="crit_d")(x)
+        crit_q = Dense(128, activation="relu")(x)
+        crit_q = Dense(64)(crit_q)
+        crit_q = LayerNormalization()(crit_q)
+        crit_q = Activation("relu")(crit_q)
+        crit_q = Dense(32, activation="relu")(crit_q)
+        crit_q = Dense(1, kernel_initializer=Orthogonal(gain=0.01), name="crit_d")(crit_q)
         crit_q = Reshape((), name="crit")(crit_q)
 
         self.model = tf.keras.Model(
@@ -258,19 +263,19 @@ class Agent:
             self.collecting_buffer.extend(collected)
             if self.mode == 0:
                 self.training_buffer.extend(collected)
-        if len(self.collecting_buffer) >= self.exp_save_threshold:
-            if self.mode == 1:
-                self.save_replay()
-                self.restore_np()
-            elif self.mode == 0:
+            if len(self.collecting_buffer) >= self.exp_save_threshold:
+                if self.mode == 1:
+                    self.save_replay()
+                    self.collecting_buffer.clear()
+                    self.restore_np()
+            if self.mode == 0:
                 if len(self.training_buffer) < self.min_exp_threshold:
                     self.load_replays(True)
-            self.collecting_buffer.clear()
+                self.update_stored_exp_counter()
+                self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
+                self.update()
+                self.collecting_buffer.clear()
 
-        if self.mode == 0:
-            self.update_stored_exp_counter()
-            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
-            self.update()
 
 
     def update_stored_exp_counter(self):
@@ -308,6 +313,7 @@ class Agent:
 
             _, next_values = self.model(next_states, training=False)
             advs, returns = self._compute_gae(rewards, values, overs, next_values)
+            # self.roll("0", f"mean returns {tf.reduce_mean(returns).numpy():.3f}")
             loss, every_loss = self._train_step(states, actions, logs, advs, returns)
             self.watched += self.batch_size
             a_loss, c_loss, e_loss = every_loss
@@ -325,8 +331,8 @@ class Agent:
                 self.edit("1", 3, f"{c.B.color(1)}{c.F.color(0)}           : {a_loss:.2f} | {c_loss:.2f} | {e_loss:.2f}{c.B.reset()}")
 
 
-            self.edit("2", 1, c.F.color(99) + f"  watched: {self.watched}")
-            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
+            self.edit("2", 2, c.F.color(99) + f"  watched: {self.watched}")
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
 
             tafter = time.time()
             self.edit("1", 4, c.F.color(70) + f"    ◷ learn: {(tafter-tbefore):.4f}")
@@ -347,6 +353,7 @@ class Agent:
 
         returns = advs + values
         advs = (advs - advs.mean()) / (advs.std() + 1e-8)
+        #returns = (returns - returns.mean()) / (returns.std() + 1e-8)
 
         return tf.constant(advs, dtype=tf.float32), tf.constant(returns, dtype=tf.float32)
 
@@ -412,7 +419,7 @@ class Agent:
             if self.episode_count % 2 == 0:
                 np.random.shuffle(self.training_buffer)
 
-            self.edit("2", 1, c.F.color(99) + f"  watched: {self.watched}")
+            self.edit("2", 2, c.F.color(99) + f"  watched: {self.watched}")
 
             self.update()
 
@@ -480,8 +487,9 @@ class Agent:
                     self.training_buffer.extend(buffer)
                     count += len(buffer)
             self.update_stored_exp_counter()
-            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}")
-            self.roll("0", c.F.color(2) + f"[{time_stamp()}] loaded {count} exps")
+            self.edit("2", 3, c.F.color(50) + f"   buffer: {len(self.training_buffer)}/{self.min_exp_threshold}")
+            if count > 0:
+                self.roll("0", c.F.color(2) + f"[{time_stamp()}] loaded {count} exps")
 
 
     def roll(self, name, content):

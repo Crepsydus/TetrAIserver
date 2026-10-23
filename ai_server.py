@@ -205,7 +205,7 @@ if __name__ == "__main__":
                             frozen_state,
                             value,
                             action,
-                            clip(-800+result, -800, -100),
+                            clip((-800+result)/2400, -0.333, -0.025),
                             log,
                             1,
                         ])
@@ -225,7 +225,7 @@ if __name__ == "__main__":
                                 new_state,
                                 value,
                                 action,
-                                move_reward,
+                                move_reward/2400,
                                 log,
                                 0,
                             ])
