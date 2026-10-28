@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     receiver_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 2))
-    receiver_socket.settimeout(60)
+    receiver_socket.settimeout(15)
     receiver_socket.bind((HOST, port))
     backlog = len(config)+1 if config[srv_idx] == "hl" else 2
     receiver_socket.listen(backlog)
@@ -114,6 +114,18 @@ if __name__ == "__main__":
             if st:
                 st.edit("30", 1+i, c.F.color(84) + str(addr[1]))
                 st.press()
+
+            try:
+                data = launcher_socket.recv(4096)
+                if data:
+                    msg = json.loads(data.decode())
+                    if "terminate" in msg.keys():
+                        if st:
+                            st.roll("0", c.F.color(88) + f"[{port}] terminating early...")
+                            st.press()
+                        raise Exception("Got terminated early from launcher")
+            except BlockingIOError:
+                pass
 
     receiver_socket.close()
 

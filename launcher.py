@@ -43,35 +43,30 @@ def socket_ports(s:socket.socket):
     return f"[{s.getsockname()[1]} <-> {s.getpeername()[1]}]"
 
 #----------------
-sims = ["hl", "ca", "ca", "ca"]
-# hl - Head Learner (eps=0)
-# ca - Collection agent (ai)
-# pd - Player Demonstrate (eps=0, no learning)
+sims = ["hl", "ca", "ca", "ca", "ca"]
+    # hl - Head Learner (eps=0)
+    # ca - Collection agent (ai)
+    # pd - Player Demonstrate (eps=0, no learning)
 no_sim_for = []   # use for Godot-env tests (type indexes of the sim(s) in sims array)
 debug_sims = False  # launch godot console with the sims (kinda useless, cus they close almost immediately after encountering errors)
 selfplay = 0  # 1 = let yourself control the game (only one sim)
-#----------------◷
+#----------------
 
 sims_count = len(sims)
-
-if sims_count >= 10:
-    print(c.B.color(124) + "TOO MANY SIMULATIONS")
-    quit()
-if sims.count("hl") > 1:
-    print(c.B.color(124) + "wrong launch configuration (can't have >1 HL)")
-    quit()
-if sims.count("hl") == 1 and sims[0] != "hl":
-    print(c.B.color(124) + "wrong launch configuration (HL must be first)")
-    quit()
-if selfplay and sims_count != 1:
-    print(c.B.color(124) + "wrong launch configuration (selfplay is ON, so must have only 1 sim)")
-    quit()
-
 
 all_processes = {}
 s_sockets = []
 s_ports = [20000+i for i in range(sims_count)]
 launcher_port = 19999
+
+if sims_count >= 10:
+    raise Exception("Simulation limit exceeded")
+if sims.count("hl") > 1:
+    raise Exception("Wrong launch configuration (can't have >1 HL)")
+if sims.count("hl") == 1 and sims[0] != "hl":
+    raise Exception("Wrong launch configuration (HL must be first)")
+if selfplay and sims_count != 1:
+    raise Exception("Wrong launch configuration (selfplay is ON, so must have only 1 sim)")
 
 si = sp.STARTUPINFO()
 si.dwFlags |= sp.STARTF_USESHOWWINDOW
@@ -85,6 +80,8 @@ sync_socket.listen(sims_count)
 str_sims = sims[0]
 for mode in sims[1:]:
     str_sims += f",{mode}"
+
+sys.excepthook = full_exit
 
 for i in range(sims_count):
     type = sims[i]
@@ -128,8 +125,6 @@ for s in s_sockets:
     s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 1))
 
 sync_socket.close()
-
-sys.excepthook = full_exit
 
 while True:
     for id in all_processes.keys():

@@ -66,7 +66,7 @@ class Agent:
     gamma = 0.94  #future move coef
     lmbd = 0.92  #future advantage coef
     critic_coef = 0.5  # weaken critic loss vs actor loss
-    entropy_coef = 0.05  # penalize for going all in to one action
+    entropy_coef = 0.01  # penalize for going all in to one action
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
     checkpoint_path = r"checkpoints"
@@ -74,7 +74,7 @@ class Agent:
 
     min_exp_threshold = 512  #how many exp needs to be in buffer to start learning
     batch_size = 512
-    exp_save_threshold = 256  # how much exp to collect
+    exp_save_threshold = 128  # how much exp to collect
 
     explode_threshold = 100
     save_interval = 5 # episodes
@@ -118,7 +118,7 @@ class Agent:
             self.edit("1", 0, c.F.color(22) + "CPU")
             self.edit("1", 1, c.F.color(70) + " last score: 0")
             self.edit("1", 2, c.F.color(27) + "       loss:")
-            self.edit("1", 3, c.F.color(27) + "           :")
+            self.edit("1", 3, c.F.color(27) + " ")
             self.edit("1", 4, c.F.color(70) + "    ◷ learn: 0.0")
             self.edit("1", 5, c.F.color(70) + "    ◷   run: 00:00:00")
 
@@ -323,12 +323,12 @@ class Agent:
             if not (loss > self.explode_threshold or
                     loss < -self.explode_threshold):
                 self.edit("1", 2, c.F.color(27) + f"       loss: {loss:.5f}{c.B.reset()}")
-                self.edit("1", 3, c.F.color(27) + f"           : {c.F.color(34)}{a_loss:.2f}" +
-                                                  f" {c.F.color(27)}| {c_loss:.2f} | {c.F.color(92)}{e_loss:.2f}{c.B.reset()}")
+                self.edit("1", 3, c.F.color(27) + f"    {c.F.color(34)}{a_loss:.4f}" +
+                                                  f" {c.F.color(27)}| {c_loss:.4f} | {c.F.color(92)}{e_loss:.4f}{c.B.reset()}")
 
             else:
                 self.edit("1", 2, f"{c.B.color(1)}{c.F.color(0)}       loss: {loss:.5f}{c.B.reset()}")
-                self.edit("1", 3, f"{c.B.color(1)}{c.F.color(0)}           : {a_loss:.2f} | {c_loss:.2f} | {e_loss:.2f}{c.B.reset()}")
+                self.edit("1", 3, f"{c.B.color(1)}{c.F.color(0)}    {a_loss:.4f} | {c_loss:.4f} | {e_loss:.4f}{c.B.reset()}")
 
 
             self.edit("2", 2, c.F.color(99) + f"  watched: {self.watched}")
