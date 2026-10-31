@@ -167,36 +167,21 @@ class Agent:
         ctype_i = Input(shape=[7, ], name="ctype")
         ntype_i = Input(shape=[7, ], name="ntype")
         htype_i = Input(shape=[7, ], name="htype")
-        move_mem_i = Input(shape=[8, 9], name="move_mem")
+        move_mem_i = Input(shape=[8, 20], name="move_mem")
         valids_i = Input(shape=[8, ], name="valids")
 
-        b = Conv2D(32, (3, 1), padding="same")(board_i)
-        b = LayerNormalization()(b)
-        b = Activation("relu")(b)
-
-        b = Conv2D(64, (3, 1), padding="same")(b)
-        b = LayerNormalization()(b)
-        b = Activation("relu")(b)
-
-        b = Conv2D(64, (3, 1), padding="same")(b)
-        b = LayerNormalization()(b)
-        b = Activation("relu")(b)
-
-        b = Conv2D(64, (24, 1), padding="valid")(b)
-        b = LayerNormalization()(b)
-        b = Activation("relu")(b)
-        b = Reshape((10, 64))(b)
+        b = Conv2D(32, (3, 1), padding="same", activation="relu")(board_i)
+        b = Conv2D(64, (3, 3), padding="same", activation="relu")(b)
         b = Flatten()(b)
         b = Dense(128, activation="relu")(b)
-
 
         t = Concatenate()([ctype_i, ntype_i, htype_i])
         t = Dense(32, activation="relu")(t)
         t = Dense(32, activation="relu")(t)
 
-        m = Conv1D(64, kernel_size=3, padding="same")(move_mem_i)
-        m = Conv1D(64, kernel_size=3, padding="same")(m)
-        m = GlobalAveragePooling1D()(m)
+        m = Conv1D(32, kernel_size=3, padding="same")(move_mem_i)
+        m = Flatten()(m)
+        m = Dense(64, activation="relu")(m)
 
         v = Dense(16, activation="relu")(valids_i)
 
@@ -204,16 +189,7 @@ class Agent:
         x = Dense(256, activation="relu")(x)
         x = Dense(128, activation="relu")(x)
 
-        act_q = Dense(64, activation="relu")(x)
-        act_q = Dense(8, kernel_initializer=Orthogonal(gain=0.01), name="act")(act_q)
-
-        crit_q = Dense(128, activation="relu")(x)
-        crit_q = Dense(64)(crit_q)
-        crit_q = LayerNormalization()(crit_q)
-        crit_q = Activation("relu")(crit_q)
-        crit_q = Dense(32, activation="relu")(crit_q)
-        crit_q = Dense(1, kernel_initializer=Orthogonal(gain=0.01), name="crit_d")(crit_q)
-        crit_q = Reshape((), name="crit")(crit_q)
+        logits = Dense(8, activation="softmax")(x)
 
         self.model = tf.keras.Model(
             inputs={"board":board_i,
@@ -222,8 +198,7 @@ class Agent:
                     "htype":htype_i,
                     "move_mem":move_mem_i,
                     "valids":valids_i},
-            outputs= [act_q,
-                      crit_q],
+            outputs= logits,
             name=f"A{self.id}"
         )
         if self.print_model_shape and self.mode == 0:
@@ -231,7 +206,7 @@ class Agent:
                 var = self.model.trainable_variables[i]
                 self.roll("--",c.F.color(202) + f"{i}. {var.name}: {list_str(var.shape, True)}", )
 
-        self.action_model = tf.keras.models.clone_model(self.model)
+        #self.action_model = tf.keras.models.clone_model(self.model)
 
 
     def put_states_to_dict(self, states):
@@ -340,24 +315,6 @@ class Agent:
             self.update()
 
 
-    def _compute_gae(self, rewards: tuple, values: tuple, overs: tuple, next_values: tf.Tensor):
-        next_values = next_values.numpy()
-
-        advs = np.zeros(self.batch_size, dtype=np.float32)
-        gae = 0.0
-
-        for i in reversed(range(self.batch_size)):
-            delta = (rewards[i] + self.gamma * (1 - overs[i]) * next_values[i]) - values[i]  # ошибка предсказания. >0 значит действие лучше чем мы думали
-            gae = delta + self.gamma * self.lmbd * (1 - overs[i]) * gae
-            advs[i] = gae
-
-        returns = advs + values
-        advs = (advs - advs.mean()) / (advs.std() + 1e-8)
-        #returns = (returns - returns.mean()) / (returns.std() + 1e-8)
-
-        return tf.constant(advs, dtype=tf.float32), tf.constant(returns, dtype=tf.float32)
-
-
     @tf.function
     def _train_step(self, states, actions, logs, advs, returns):
         with tf.GradientTape() as tape:
@@ -447,8 +404,6 @@ class Agent:
             checkpoint = files[self.load_index]
             if checkpoint != self.last_loaded_checkpoint:
                 self.model = tf.keras.models.load_model(os.path.abspath(checkpoint))
-
-                self.action_model.set_weights(self.model.get_weights())
 
                 self.watched = int(checkpoint.split("_")[-1][:-6])
 

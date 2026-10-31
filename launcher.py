@@ -2,9 +2,9 @@ import subprocess as sp
 import sys, socket, time, json, struct
 import static.colorful as c
 
-sim_path = r"C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\simulation\sim.exe"
-debug_sim_path = r"C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\simulation\sim.console.exe"
-python_program = r"C:\Users\user\JetBrains-projects\PycharmProjects\TetrAIserver\ai_server.py"
+sim_path = r"C:\Users\Crepsyd\Documents\Programs\Python\TetrAIserver\simulation\sim.exe"
+debug_sim_path = r"C:\Users\Crepsyd\Documents\Programs\Python\TetrAIserver\simulation\sim.console.exe"
+python_program = r"C:\Users\Crepsyd\Documents\Programs\Python\TetrAIserver\ai_server.py"
 python_exec = sys.executable
 HOST = "127.0.0.1"
 
@@ -43,9 +43,11 @@ def socket_ports(s:socket.socket):
     return f"[{s.getsockname()[1]} <-> {s.getpeername()[1]}]"
 
 #----------------
-sims = ["hl", "ca", "ca", "ca", "ca"]
+sims = ["hl", "ca", "ca"]
     # hl - Head Learner (eps=0)
-    # ca - Collection agent (ai)
+    # aa - ai agent (eps=0)
+    # ea - epsilon agent
+    # ra - random agent
     # pd - Player Demonstrate (eps=0, no learning)
 no_sim_for = []   # use for Godot-env tests (type indexes of the sim(s) in sims array)
 debug_sims = False  # launch godot console with the sims (kinda useless, cus they close almost immediately after encountering errors)
@@ -116,7 +118,7 @@ for i in range(sims_count):
                          creationflags=sp.CREATE_NEW_PROCESS_GROUP,)
         print(c.F.color(75) + f"Simulation started on port {s_ports[i]}" + c.F.reset())
         all_processes["g" + str(s_ports[i])] = (p, False, False)
-        time.sleep(1.25)
+        time.sleep(1)
 
     srv_conn, addr = sync_socket.accept()
     s_sockets.append(srv_conn)

@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     receiver_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     receiver_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 2))
-    receiver_socket.settimeout(15)
+    receiver_socket.settimeout(20)
     receiver_socket.bind((HOST, port))
     backlog = len(config)+1 if config[srv_idx] == "hl" else 2
     receiver_socket.listen(backlog)
@@ -84,8 +84,6 @@ if __name__ == "__main__":
         st.edit("31", 0, c.F.color(99) + "status")
 
         st.press()
-    agent = Agent(srv_idx, config, s_ports, st)
-    created_sockets.append(agent.calling_socket)
 
     launcher_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     launcher_socket.bind((HOST, port-1000))
@@ -97,7 +95,6 @@ if __name__ == "__main__":
         st.roll("0", c.F.color(84) + f"launcher connected: {socket_ports(launcher_socket, True)}" + c.F.reset())
         st.press()
     buffer[launcher_socket] = ""
-
 
     agents_info = {}
     if config[srv_idx] == "hl":
@@ -126,6 +123,10 @@ if __name__ == "__main__":
                         raise Exception("Got terminated early from launcher")
             except BlockingIOError:
                 pass
+
+
+    agent = Agent(srv_idx, config, s_ports, st)
+    created_sockets.append(agent.calling_socket)
 
     receiver_socket.close()
 
